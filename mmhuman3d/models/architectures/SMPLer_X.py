@@ -1,3 +1,6 @@
+from abc import ABCMeta
+from typing import Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -15,20 +18,20 @@ from .base_architecture import BaseArchitecture
 
 
 class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
+
     def __init__(self,
-                 backbone: Optional[Union[dict, None]],
-                 focal,
-                 camera_3d_size,
-                 input_img_shape,
-                 input_body_shape,
-                 input_hand_shape,
-                 input_face_shape,
-                 output_hm_shape,
-                 output_hand_hm_shape,
-                 testset,
-                 trainset_3d,
-                 trainset_2d,
-                 princpt,
+                 backbone: Optional[Union[dict, None]] = None,
+                 focal = (5000, 5000) ,
+                 camera_3d_size = 2.5,
+                 input_img_shape = (512, 384),
+                 input_body_shape = (256, 192),
+                 input_hand_shape = (256, 256),
+                 input_face_shape =  (192, 192),
+                 output_hm_shape = (16, 16, 12),
+                 output_hand_hm_shape = (16, 16, 16),
+                 output_face_hm_shape = (8, 8, 8),
+                 testset = 'EHF',
+                 princpt = (96, 128),
                  feat_dim,
                  upscale,
                  init_cfg: Optional[Union[list, dict, None]] = None):
@@ -42,9 +45,8 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
         self.input_face_shape = input_face_shape
         self.output_hm_shape = output_hm_shape
         self.output_hand_hm_shape = output_hand_hm_shape
+        self.output_face_hm_shape = output_face_hm_shape
         self.testset = testset
-        self.trainset_3d = trainset_3d
-        self.trainset_2d = trainset_2d
         self.princpt = princpt
         self.feat_dim = feat_dim
         self.upscale = upscale
@@ -201,7 +203,7 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
 
     def forward_test(self, inputs, targets, meta_info):
 
-        body_img = F.interpolate(inputs['img'], self.input_body_shape)
+        body_img = F.interpolate(inputs, self.input_body_shape)
 
         # 1. Encoder
         img_feat, task_tokens = self.encoder(body_img)  # task_token:[bs, N, c]
@@ -247,7 +249,6 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
 
         # final output
         joint_proj, joint_cam, joint_cam_wo_ra, mesh_cam = self.get_coord(root_pose, body_pose, lhand_pose, rhand_pose, jaw_pose, shape, expr, cam_trans)
-        pose = torch.cat((root_pose, body_pose, lhand_pose, rhand_pose, jaw_pose), 1)
         joint_img = torch.cat((body_joint_img, lhand_joint_img, rhand_joint_img), 1)
 
         if 'smplx_pose' in targets:
@@ -275,7 +276,6 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
 
             # test output
             out = {}
-            out['img'] = inputs['img']
             out['joint_img'] = joint_img
             out['smplx_joint_proj'] = joint_proj
             out['smplx_mesh_cam'] = mesh_cam

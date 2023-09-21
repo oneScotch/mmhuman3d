@@ -20,6 +20,8 @@ train_batch_size = 16
 syncbn = True
 bbox_ratio = 1.2
 
+input_body_shape = (256, 192)
+princpt = (input_body_shape[1] / 2, input_body_shape[0] / 2)
 model = dict(
     type='SMPLer_X',
     pretrained=None,
@@ -27,19 +29,30 @@ model = dict(
         type='ViT',
         img_size=(256, 192),
         patch_size=16,
-        embed_dim=1024,
-        depth=24,
+        embed_dim=1280,
+        depth=32,
         num_heads=16,
         ratio=1,
         use_checkpoint=False,
         mlp_ratio=4,
         qkv_bias=True,
-        drop_path_rate=0.5,
+        drop_path_rate=0.55,
     ),
-
+    focal = (5000, 5000)
+    input_img_shape = (512, 384),
+    input_body_shape = input_body_shape,
+    input_hand_shape = (256, 256),
+    input_face_shape = (192, 192),
+    output_hm_shape = (16, 16, 12),
+    output_hand_hm_shape = (16, 16, 16),
+    output_face_hm_shape = (8, 8, 8),
+    testset = 'EHF',
+    princpt = princpt,
+    feat_dim = 1280,
+    upscale = 4,
+)
 # continue
 continue_train = True
-start_over = True
 pretrained_model_path = '../path_to_smpler_x_h32/snapshot.pth.tar'
 
 # dataset setting
@@ -53,7 +66,7 @@ dataset_list = ['Human36M', 'MSCOCO', 'MPII', 'AGORA', 'EHF', 'SynBody', 'GTA_Hu
 trainset_3d = ['PW3D']
 trainset_2d = []
 trainset_humandata = ['GTA_Human2', 'EgoBody_Kinect', 'InstaVariety', 'HumanSC3D']
-testset = 'EHF'
+
 
 use_cache = True
 
@@ -77,11 +90,10 @@ agora_benchmark = 'agora_model' # 'agora_model', 'test_only'
 
 model_type = 'smpler_x_h'
 \
-feat_dim = 1280
+
 
 ## =====FIXED ARGS============================================================
 ## model setting
-upscale = 4
 hand_pos_joint_num = 20
 face_pos_joint_num = 72
 num_task_token = 24
@@ -93,15 +105,7 @@ test_sample_interval = 100
 make_same_len = False
 
 ## input, output size
-input_img_shape = (512, 384)
-input_body_shape = (256, 192)
-output_hm_shape = (16, 16, 12)
-input_hand_shape = (256, 256)
-output_hand_hm_shape = (16, 16, 16)
-output_face_hm_shape = (8, 8, 8)
-input_face_shape = (192, 192)
-focal = (5000, 5000)  # virtual focal lengths
-princpt = (input_body_shape[1] / 2, input_body_shape[0] / 2)  # virtual principal point position
+
 body_3d_size = 2
 hand_3d_size = 0.3
 face_3d_size = 0.3
