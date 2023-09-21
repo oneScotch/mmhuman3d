@@ -3,11 +3,11 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 #from utils.transforms import sample_joint_features, soft_argmax_2d, soft_argmax_3d
-from utils.human_models import smpl_x
+from mmhuman3d.models.utils.human_models import smpl_x
 from mmcv.ops.roi_align import roi_align
 
 class PositionNet(nn.Module):
-    def __init__(self, part, feat_dim=768, output_hm_shape, output_hand_hm_shape):
+    def __init__(self, part, feat_dim, output_hm_shape, output_hand_hm_shape):
         super(PositionNet, self).__init__()
         if part == 'body':
             self.joint_num = len(smpl_x.pos_joint_part['body'])
@@ -82,7 +82,7 @@ class FaceRegressor(nn.Module):
         return expr_param, jaw_pose
 
 class BoxNet(nn.Module):
-    def __init__(self, feat_dim=768, output_hm_shape):
+    def __init__(self, feat_dim, output_hm_shape):
         super(BoxNet, self).__init__()
         self.output_hm_shape = output_hm_shape
         self.joint_num = len(smpl_x.pos_joint_part['body'])
@@ -130,7 +130,7 @@ class BoxSizeNet(nn.Module):
         return lhand_size, rhand_size, face_size
 
 class HandRoI(nn.Module):
-    def __init__(self, feat_dim=768, upscale=4, input_body_shape, output_hm_shape):
+    def __init__(self, feat_dim, upscale, input_body_shape, output_hm_shape):
         super(HandRoI, self).__init__()
         self.upscale = upscale
         if upscale==1:

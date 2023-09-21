@@ -1,14 +1,7 @@
 _base_ = ['../_base_/default_runtime.py']
-encoder_config_file = 'transformer_utils/configs/smpler_x/encoder/body_encoder_huge.py'
-encoder_pretrained_model_path = '../pretrained_models/vitpose_huge.pth'
+__model_path__ = 'data/body_models/smplx'
+__joints_regressor__ = 'data/body_models/smplx/SMPLX_NEUTRAL.npz'
 
-use_adversarial_train = True
-import os
-import os.path as osp
-
-# will be update in exp
-num_gpus = -1
-exp_name = 'output/exp1/pre_analysis'
 
 # quick access
 save_epoch = 1
@@ -20,14 +13,14 @@ train_batch_size = 16
 syncbn = True
 bbox_ratio = 1.2
 
+img_res=(256, 192)
 input_body_shape = (256, 192)
 princpt = (input_body_shape[1] / 2, input_body_shape[0] / 2)
 model = dict(
     type='SMPLer_X',
-    pretrained=None,
     backbone=dict(
         type='ViT',
-        img_size=(256, 192),
+        img_size=img_res,
         patch_size=16,
         embed_dim=1280,
         depth=32,
@@ -37,8 +30,10 @@ model = dict(
         mlp_ratio=4,
         qkv_bias=True,
         drop_path_rate=0.55,
+        init_cfg=dict(type='Pretrained', checkpoint='data/pretrained_models//vitpose_huge.pth')
     ),
-    focal = (5000, 5000)
+    focal = (5000, 5000),
+    camera_3d_size = 2.5,
     input_img_shape = (512, 384),
     input_body_shape = input_body_shape,
     input_hand_shape = (256, 256),
@@ -51,9 +46,109 @@ model = dict(
     feat_dim = 1280,
     upscale = 4,
 )
-# continue
-continue_train = True
-pretrained_model_path = '../path_to_smpler_x_h32/snapshot.pth.tar'
+# dataset settings
+dataset_type = 'HumanImageSMPLXDataset'
+img_norm_cfg = dict(
+    mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
+data_keys = [
+    'has_smplx', 'has_keypoints3d', 'has_keypoints2d',
+    'has_smplx_global_orient', 'has_smplx_body_pose', 'has_smplx_jaw_pose',
+    'has_smplx_right_hand_pose', 'has_smplx_left_hand_pose', 'has_smplx_betas',
+    'has_smplx_expression', 'smplx_jaw_pose', 'smplx_body_pose',
+    'smplx_right_hand_pose', 'smplx_left_hand_pose', 'smplx_global_orient',
+    'smplx_betas', 'keypoints2d', 'keypoints3d', 'sample_idx',
+    'smplx_expression'
+]
+train_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(type='BBoxCenterJitter', factor=0.0, dist='normal'),
+    dict(type='RandomHorizontalFlip', flip_prob=0.5,
+         convention='smplx'),  # hand = 0,head = body = 0.5
+    dict(
+        type='GetRandomScaleRotation',
+        rot_factor=30.0,
+        scale_factor=0.25,
+        rot_prob=0.6),
+    dict(type='Rotation'),
+    dict(type='MeshAffine', img_res=img_res),  # hand = 224, body = head = 256
+    dict(type='RandomChannelNoise', noise_factor=0.4),
+    dict(
+        type='SimulateLowRes',
+        dist='categorical',
+        cat_factors=(1.0, ),
+        # head = (1.0, 1.2, 1.5, 2.0, 3.0, 4.0, 8.0)
+        # hand = (1.0, 1.2, 1.5, 2.0, 3.0, 4.0)
+        # body = (1.0,)
+        factor_min=1.0,
+        factor_max=1.0),
+    dict(type='Normalize', **img_norm_cfg),
+    dict(type='ImageToTensor', keys=['img', 'ori_img']),
+    dict(type='ToTensor', keys=data_keys),
+    dict(
+        type='Collect',
+        keys=['img', *data_keys],
+        meta_keys=[
+            'image_path', 'center', 'scale', 'rotation', 'ori_img',
+            'crop_transform'
+        ])
+]
+test_pipeline = []
+
+
+data = dict(
+    samples_per_gpu=32,
+    workers_per_gpu=1,
+    train=dict(
+        type='MixedDataset',
+        configs=[
+            dict(
+                type=dataset_type,
+                dataset_name='h36m',
+                data_prefix='data',
+                pipeline=train_pipeline,
+                ann_file='hybrik_h36m_train.npz'),
+            dict(
+                type=dataset_type,
+                dataset_name='mpi_inf_3dhp',
+                data_prefix='data',
+                pipeline=train_pipeline,
+                ann_file='hybrik_mpi_inf_3dhp_train.npz'),
+            dict(
+                type=dataset_type,
+                dataset_name='coco',
+                data_prefix='data',
+                pipeline=train_pipeline,
+                ann_file='hybrik_coco_2017_train.npz'),
+        ],
+        partition=[0.4, 0.1, 0.5]),
+    test=dict(
+        type=dataset_type,
+        body_model=dict(
+            type='smplx',
+            keypoint_src='smplx',
+            keypoint_dst='smplx',
+            model_path=__model_path__,
+            joints_regressor=__joints_regressor__),
+        dataset_name='EHF',
+        data_prefix='data',
+        pipeline=test_pipeline,
+        ann_file='ehf_val.npz',
+        convention='smplx'),
+    val=dict(
+        type=dataset_type,
+        body_model=dict(
+            type='smplx',
+            keypoint_src='smplx',
+            keypoint_dst='smplx',
+            model_path=__model_path__,
+            joints_regressor=__joints_regressor__),
+        dataset_name='EHF',
+        data_prefix='data',
+        pipeline=test_pipeline,
+        ann_file='ehf_val.npz',
+        convention='smplx'),
+)
+
 
 # dataset setting
 agora_fix_betas = True
@@ -86,10 +181,7 @@ smplx_kps_3d_weight = 100.0
 smplx_kps_2d_weight = 1.0
 net_kps_2d_weight = 1.0
 
-agora_benchmark = 'agora_model' # 'agora_model', 'test_only'
 
-model_type = 'smpler_x_h'
-\
 
 
 ## =====FIXED ARGS============================================================
@@ -124,3 +216,4 @@ vis = False
 
 ## directory
 output_dir, model_dir, vis_dir, log_dir, result_dir, code_dir = None, None, None, None, None, None
+

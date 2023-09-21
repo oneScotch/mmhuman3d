@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from ..heads.smplerx_head import PositionNet, HandRotationNet, FaceRegressor, BoxNet, HandRoI, BodyRotationNet
 
-from utils.human_models import smpl_x
+from mmhuman3d.models.utils.human_models import smpl_x
 
 import torchgeometry as tgm
 import math
@@ -20,7 +20,7 @@ from .base_architecture import BaseArchitecture
 class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
 
     def __init__(self,
-                 backbone: Optional[Union[dict, None]] = None,
+                 backbone = None,
                  focal = (5000, 5000) ,
                  camera_3d_size = 2.5,
                  input_img_shape = (512, 384),
@@ -32,8 +32,8 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
                  output_face_hm_shape = (8, 8, 8),
                  testset = 'EHF',
                  princpt = (96, 128),
-                 feat_dim,
-                 upscale,
+                 feat_dim = 1280,
+                 upscale = 4,
                  init_cfg: Optional[Union[list, dict, None]] = None):
         super(SMPLer_X, self).__init__(init_cfg)
         self.backbone = backbone
@@ -92,10 +92,10 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
     def _prepare_body_module(self):
         self.body_position_net = PositionNet('body', feat_dim=self.feat_dim, output_hm_shape=self.output_hm_shape, output_hand_hm_shape=self.output_hand_hm_shape)
         self.body_rotation_net = BodyRotationNet(feat_dim=self.feat_dim)
-        self.box_net = BoxNet(feat_dim=self.feat_dim)
+        self.box_net = BoxNet(feat_dim=self.feat_dim, output_hm_shape=self.output_hm_shape)
 
     def _prepare_hand_module(self):
-        self.hand_position_net = PositionNet('hand', feat_dim=self.feat_dim)
+        self.hand_position_net = PositionNet('hand', feat_dim=self.feat_dim, output_hm_shape=self.output_hm_shape, output_hand_hm_shape=self.output_hand_hm_shape)
         self.hand_roi_net = HandRoI(feat_dim=self.feat_dim, upscale=self.upscale, input_body_shape=self.input_body_shape, output_hm_shape=self.output_hm_shape)
         self.hand_rotation_net = HandRotationNet('hand', feat_dim=self.feat_dim)
 
@@ -201,9 +201,9 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
         """
         pass
 
-    def forward_test(self, inputs, targets, meta_info):
+    def forward_test(self,  img: torch.Tensor, img_metas: dict, **kwargs):
 
-        body_img = F.interpolate(inputs, self.input_body_shape)
+        body_img = F.interpolate(img, self.input_body_shape)
 
         # 1. Encoder
         img_feat, task_tokens = self.encoder(body_img)  # task_token:[bs, N, c]
@@ -251,9 +251,6 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
         joint_proj, joint_cam, joint_cam_wo_ra, mesh_cam = self.get_coord(root_pose, body_pose, lhand_pose, rhand_pose, jaw_pose, shape, expr, cam_trans)
         joint_img = torch.cat((body_joint_img, lhand_joint_img, rhand_joint_img), 1)
 
-        if 'smplx_pose' in targets:
-            mesh_pseudo_gt = self.generate_mesh_gt(targets)
-
         # change hand output joint_img according to hand bbox
         for part_name, bbox in (('lhand', lhand_bbox), ('rhand', rhand_bbox)):
             joint_img[:, smpl_x.pos_joint_part[part_name], 0] *= (
@@ -290,20 +287,6 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
             out['lhand_bbox'] = lhand_bbox
             out['rhand_bbox'] = rhand_bbox
             out['face_bbox'] = face_bbox
-            if 'smplx_shape' in targets:
-                out['smplx_shape_target'] = targets['smplx_shape']
-            if 'img_path' in meta_info:
-                out['img_path'] = meta_info['img_path']
-            if 'smplx_pose' in targets:
-                out['smplx_mesh_cam_pseudo_gt'] = mesh_pseudo_gt
-            if 'smplx_mesh_cam' in targets:
-                out['smplx_mesh_cam_target'] = targets['smplx_mesh_cam']
-            if 'smpl_mesh_cam' in targets:
-                out['smpl_mesh_cam_target'] = targets['smpl_mesh_cam']
-            if 'bb2img_trans' in meta_info:
-                out['bb2img_trans'] = meta_info['bb2img_trans']
-            if 'gt_smplx_transl' in meta_info:
-                out['gt_smplx_transl'] = meta_info['gt_smplx_transl']
 
             return out
 
@@ -370,5 +353,6 @@ def restore_bbox(bbox_center, bbox_size, aspect_ratio, extension_ratio, input_bo
     bbox[:, 2] = bbox[:, 2] + bbox[:, 0]
     bbox[:, 3] = bbox[:, 3] + bbox[:, 1]
     return bbox
+
 
 

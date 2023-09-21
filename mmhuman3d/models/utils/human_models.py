@@ -6,8 +6,8 @@ import smplx
 import pickle
 
 class SMPLX(object):
-    def __init__(self, human_model_path):
-        self.human_model_path = human_model_path
+    def __init__(self):
+        self.human_model_path = '/mnt/cache/weichen1/ruisi/mmhuman3d/data/body_models'
         self.layer_arg = {'create_global_orient': False, 'create_body_pose': False, 'create_left_hand_pose': False, 'create_right_hand_pose': False, 'create_jaw_pose': False, 'create_leye_pose': False, 'create_reye_pose': False, 'create_betas': False, 'create_expression': False, 'create_transl': False}
         self.layer = {'neutral': smplx.create(self.human_model_path, 'smplx', gender='NEUTRAL', use_pca=False, use_face_contour=True, **self.layer_arg),
                         'male': smplx.create(self.human_model_path, 'smplx', gender='MALE', use_pca=False, use_face_contour=True, **self.layer_arg),
@@ -152,8 +152,8 @@ class SMPLX(object):
         return new_joint
 
 class SMPL(object):
-    def __init__(self, human_model_path):
-        self.human_model_path = human_model_path
+    def __init__(self):
+        self.human_model_path = '/mnt/cache/weichen1/ruisi/mmhuman3d/data/body_models'
         self.layer_arg = {'create_body_pose': False, 'create_betas': False, 'create_global_orient': False, 'create_transl': False}
         self.layer = {'neutral': smplx.create(self.human_model_path, 'smpl', gender='NEUTRAL', **self.layer_arg), 'male': smplx.create(self.human_model_path, 'smpl', gender='MALE', **self.layer_arg), 'female': smplx.create(self.human_model_path, 'smpl', gender='FEMALE', **self.layer_arg)}
         self.vertex_num = 6890

@@ -15,7 +15,7 @@ from mmhuman3d.apis import (
     inference_image_based_model,
     init_model,
 )
-
+from mmhuman3d.core.visualization.visualize_smpl import visualize_smpl_hmr
 from mmhuman3d.data.data_structures.human_data import HumanData
 from mmhuman3d.utils.demo_utils import (
     prepare_frames,
@@ -32,7 +32,7 @@ except (ImportError, ModuleNotFoundError):
 
 
 
-def get_detection_result(args, frames_iter, mesh_model, extractor):
+def get_detection_result(args, frames_iter):
     person_det_model = init_detector(
         args.det_config, args.det_checkpoint, device=args.device.lower())
     frame_id_list = []
@@ -42,11 +42,6 @@ def get_detection_result(args, frames_iter, mesh_model, extractor):
         # keep the person class bounding boxes.
         results = process_mmdet_results(
             mmdet_results, cat_id=args.det_cat_id, bbox_thr=args.bbox_thr)
-        # extract features from the input video or image sequences
-        if mesh_model.cfg.model.type == 'VideoBodyModelEstimator' \
-                and extractor is not None:
-            results = feature_extract(
-                extractor, frame, results, args.bbox_thr, format='xyxy')
         # drop the frame with no detected results
         if results == []:
             continue
@@ -69,10 +64,6 @@ def single_person_with_mmdet(args, frames_iter):
         frames_iter (np.ndarray,): prepared frames
 
     """
-    mesh_model, extractor = init_model(
-        args.mesh_reg_config,
-        args.mesh_reg_checkpoint,
-        device=args.device.lower())
     smplx_results = dict(
         global_orient=[],
         body_pose=[],
@@ -80,18 +71,18 @@ def single_person_with_mmdet(args, frames_iter):
         left_hand_pose=[],
         right_hand_pose=[],
         jaw_pose=[],
-        expression=[])
+        expression=[],
+        transl=[])
     pred_cams, bboxes_xyxy = [], []
 
-    frame_id_list, result_list = get_detection_result(args, frames_iter,
-                                                      mesh_model, extractor)
+    frame_id_list, result_list = get_detection_result(args, frames_iter)
 
     frame_num = len(frame_id_list)
 
     smplerx_config = mmcv.Config.fromfile(args.mesh_reg_config)
     print("here")
     smplerx_config.model['device'] = args.device
-    model, _ = init_model(
+    mesh_model, _ = init_model(
         smplerx_config, device=args.device.lower())
     ckpt = torch.load(args.mesh_reg_checkpoint)
     new_state_dict = OrderedDict()
@@ -101,78 +92,92 @@ def single_person_with_mmdet(args, frames_iter):
         k = k.replace('module.backbone', 'module.encoder').replace('body_rotation_net', 'body_regressor').replace(
             'hand_rotation_net', 'hand_regressor')
         new_state_dict[k] = v
-    model.load_state_dict(new_state_dict, strict=False)
+    mesh_model.load_state_dict(new_state_dict, strict=False)
 
-    targets = {}
-    meta_info = {}
     for i, result in enumerate(mmcv.track_iter_progress(result_list)):
-        # mesh recovery
-        print(result)
-        with torch.no_grad():
-            out = model.forward_test(result, targets, meta_info)
-        mesh = out['smplx_mesh_cam'].detach().cpu().numpy()[0]
+        frame_id = frame_id_list[i]
+        mesh_results = inference_image_based_model(
+            mesh_model,
+            frames_iter[frame_id],
+            result,
+            bbox_thr=args.bbox_thr,
+            format='xyxy')
+        smplx_results['global_orient'].append(mesh_results[0]['smplx_root_pose'].reshape(-1,3).numpy())
+        smplx_results['body_pose'].append(mesh_results[0]['smplx_body_pose'].reshape(-1,3).numpy())
+        smplx_results['betas'].append(mesh_results[0]['smplx_shape'].reshape(-1,10).numpy())
+        smplx_results['left_hand_pose'].append(mesh_results[0]['smplx_lhand_pose'].reshape(-1,3).numpy())
+        smplx_results['right_hand_pose'].append(mesh_results[0]['smplx_rhand_pose'].reshape(-1,3).numpy())
+        smplx_results['jaw_pose'].append(mesh_results[0]['smplx_jaw_pose'].reshape(-1,3).numpy())
+        smplx_results['expression'].append(mesh_results[0]['smplx_expr'].reshape(-1,10).numpy())
+        smplx_results['transl'].append( mesh_results[0]['cam_trans'].reshape(-1,3).numpy())
 
+        pred_cams.append(mesh_results[0]['camera'])
+        bboxes_xyxy.append(mesh_results[0]['bbox'])
 
-    #     ## save single person param
-    #     smplx_pred = {}
-    #     smplx_pred['global_orient'] = out['smplx_root_pose'].reshape(-1,3).cpu().numpy()
-    #     smplx_pred['body_pose'] = out['smplx_body_pose'].reshape(-1,3).cpu().numpy()
-    #     smplx_pred['left_hand_pose'] = out['smplx_lhand_pose'].reshape(-1,3).cpu().numpy()
-    #     smplx_pred['right_hand_pose'] = out['smplx_rhand_pose'].reshape(-1,3).cpu().numpy()
-    #     smplx_pred['jaw_pose'] = out['smplx_jaw_pose'].reshape(-1,3).cpu().numpy()
-    #     smplx_pred['leye_pose'] = np.zeros((1, 3))
-    #     smplx_pred['reye_pose'] = np.zeros((1, 3))
-    #     smplx_pred['betas'] = out['smplx_shape'].reshape(-1,10).cpu().numpy()
-    #     smplx_pred['expression'] = out['smplx_expr'].reshape(-1,10).cpu().numpy()
-    #     smplx_pred['transl'] =  out['cam_trans'].reshape(-1,3).cpu().numpy()
+    for key in smplx_results:
+        smplx_results[key] = np.array(smplx_results[key])
+    pred_cams = np.array(pred_cams)
+    bboxes_xyxy = np.array(bboxes_xyxy)
+    # release GPU memory
+    del mesh_model
+    torch.cuda.empty_cache()
 
-    #         if args.output is not None:
-    #     os.makedirs(args.output, exist_ok=True)
-    #     human_data = HumanData()
-    #     smplx = {}
-    #     smplx['fullpose'] = fullpose
-    #     smplx['betas'] = smplx_results['betas']
-    #     human_data['smplx'] = smplx
-    #     human_data['pred_cams'] = pred_cams
-    #     human_data.dump(osp.join(args.output, 'inference_result.npz'))
+    if smplx_results['body_pose'].shape[1:] == (21, 3, 3):
+        for key in smplx_results:
+            if key not in ['betas', 'expression']:
+                smplx_results[key] = rotmat_to_aa(smplx_results[key])
+    else:
+        raise Exception('Wrong shape of `body_pose`')
+    fullpose = np.concatenate(
+        (
+            smplx_results['global_orient'],
+            smplx_results['body_pose'],
+            smplx_results['jaw_pose'],
+            # Use zero for leye_pose and reye_pose
+            np.zeros((frame_num, 2, 3), dtype=smplx_results['jaw_pose'].dtype),
+            smplx_results['left_hand_pose'],
+            smplx_results['right_hand_pose'],
+        ),
+        axis=1)
 
-    #     save_path_smplx = os.path.join(args.output_folder, 'smplx')
-    #     os.makedirs(save_path_smplx, exist_ok= True)
+    if args.output is not None:
+        os.makedirs(args.output, exist_ok=True)
+        human_data = HumanData()
+        smplx = {}
+        smplx['fullpose'] = fullpose
+        smplx['betas'] = smplx_results['betas']
+        human_data['smplx'] = smplx
+        human_data['pred_cams'] = pred_cams
+        human_data.dump(osp.join(args.output, 'inference_result.npz'))
 
-    #     npz_path = os.path.join(save_path_smplx, f'{frame:05}_{bbox_id}.npz')
-    #     np.savez(npz_path, **smplx_pred)
-
-    #     ## render single person mesh
-    #     focal = [cfg.focal[0] / cfg.input_body_shape[1] * bbox[2], cfg.focal[1] / cfg.input_body_shape[0] * bbox[3]]
-    #     princpt = [cfg.princpt[0] / cfg.input_body_shape[1] * bbox[2] + bbox[0], cfg.princpt[1] / cfg.input_body_shape[0] * bbox[3] + bbox[1]]
-    #     vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt},
-    #                             mesh_as_vertices=args.show_verts)
-    #     if args.show_bbox:
-    #         vis_img = cv2.rectangle(vis_img, start_point, end_point, (255, 0, 0), 2)
-
-    #     ## save single person meta
-    #     meta = {'focal': focal,
-    #             'princpt': princpt,
-    #             'bbox': bbox.tolist(),
-    #             'bbox_mmdet': mmdet_box_xywh.tolist(),
-    #             'bbox_id': bbox_id,
-    #             'img_path': img_path}
-    #     json_object = json.dumps(meta, indent=4)
-
-    #     save_path_meta = os.path.join(args.output_folder, 'meta')
-    #     os.makedirs(save_path_meta, exist_ok= True)
-    #     with open(os.path.join(save_path_meta, f'{frame:05}_{bbox_id}.json'), "w") as outfile:
-    #         outfile.write(json_object)
-    #     frame_name = img_path.split('/')[-1]
-    #     save_path_img = os.path.join(args.output, 'img')
-    #     os.makedirs(save_path_img, exist_ok= True)
-    #     cv2.imwrite(os.path.join(save_path_img, f'{frame_name}'), vis_img[:, :, ::-1])
-
-
-    # del model
-    # del extractor
-    # torch.cuda.empty_cache()
-
+    if args.show_path is not None:
+        frames_folder = osp.join(args.show_path, 'images')
+        os.makedirs(frames_folder, exist_ok=True)
+        array_to_images(
+            np.array(frames_iter)[frame_id_list], output_folder=frames_folder)
+        # create body model
+        body_model_config = dict(
+            type='smplx',
+            num_betas=10,
+            use_face_contour=True,
+            use_pca=False,
+            flat_hand_mean=True,
+            model_path=args.body_model_dir,
+            keypoint_src='smplx',
+            keypoint_dst='smplx',
+        )
+        visualize_smpl_hmr(
+            poses=fullpose.reshape(-1, 1, 165),
+            betas=smplx_results['betas'],
+            cam_transl=pred_cams,
+            bbox=bboxes_xyxy,
+            output_path=os.path.join(args.show_path, 'smplx.mp4'),
+            render_choice=args.render_choice,
+            resolution=frames_iter[0].shape[:2],
+            origin_frames=frames_folder,
+            body_model_config=body_model_config,
+            overwrite=True)
+        shutil.rmtree(frames_folder)
 
 def main(args):
 
@@ -210,11 +215,6 @@ if __name__ == '__main__':
         'faster_rcnn_r50_fpn_1x_coco/'
         'faster_rcnn_r50_fpn_1x_coco_20200130-047c8118.pth',
         help='Checkpoint file for detection')
-    parser.add_argument(
-        '--tracking_config',
-        default='demo/mmtracking_cfg/'
-        'deepsort_faster-rcnn_fpn_4e_mot17-private-half.py',
-        help='Config file for tracking')
     parser.add_argument(
         '--det_cat_id',
         type=int,
