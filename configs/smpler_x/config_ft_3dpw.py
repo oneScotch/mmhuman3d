@@ -93,7 +93,15 @@ train_pipeline = [
         ])
 ]
 test_pipeline = []
-inference_pipeline = []
+inference_pipeline = [
+    dict(
+        type='Collect',
+        keys=['img', *data_keys],
+        meta_keys=[
+            'image_path', 'center', 'scale', 'rotation', 'ori_img',
+            'crop_transform'
+        ])
+]
 
 
 data = dict(
