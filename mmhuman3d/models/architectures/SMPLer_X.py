@@ -95,11 +95,13 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
         self.body_position_net = PositionNet('body', feat_dim=self.feat_dim, output_hm_shape=self.output_hm_shape, output_hand_hm_shape=self.output_hand_hm_shape)
         self.body_rotation_net = BodyRotationNet(feat_dim=self.feat_dim)
         self.box_net = BoxNet(feat_dim=self.feat_dim, output_hm_shape=self.output_hm_shape)
+        self.body_regressor = self.body_rotation_net
 
     def _prepare_hand_module(self):
         self.hand_position_net = PositionNet('hand', feat_dim=self.feat_dim, output_hm_shape=self.output_hm_shape, output_hand_hm_shape=self.output_hand_hm_shape)
         self.hand_roi_net = HandRoI(feat_dim=self.feat_dim, upscale=self.upscale, input_body_shape=self.input_body_shape, output_hm_shape=self.output_hm_shape)
         self.hand_rotation_net = HandRotationNet('hand', feat_dim=self.feat_dim)
+        self.hand_regressor = self.hand_rotation_net
 
     def _prepare_face_module(self):
         self.face_regressor = FaceRegressor(feat_dim=self.feat_dim)
