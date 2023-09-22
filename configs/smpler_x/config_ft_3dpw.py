@@ -93,6 +93,7 @@ train_pipeline = [
         ])
 ]
 test_pipeline = []
+inference_pipeline = []
 
 
 data = dict(
