@@ -34,6 +34,7 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
                  princpt = (96, 128),
                  feat_dim = 1280,
                  upscale = 4,
+                 device: str = 'cpu',
                  init_cfg: Optional[Union[list, dict, None]] = None):
         super(SMPLer_X, self).__init__(init_cfg)
         self.backbone = backbone
@@ -50,6 +51,7 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
         self.princpt = princpt
         self.feat_dim = feat_dim
         self.upscale = upscale
+        self.device = torch.device(device)
         self._create_encoder()
         self._prepare_body_module()
         self._prepare_hand_module()
