@@ -8,7 +8,6 @@ from ..heads.smplerx_head import PositionNet, HandRotationNet, FaceRegressor, Bo
 
 from mmhuman3d.models.utils.human_models import smpl_x
 
-import torchgeometry as tgm
 import math
 import mmcv
 import copy
@@ -217,8 +216,7 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
         # 2. Body Regressor
         body_joint_hm, body_joint_img = self.body_position_net(img_feat)
         root_pose, body_pose, shape, cam_param, = self.body_regressor(body_pose_token, shape_token, cam_token, body_joint_img.detach())
-        root_pose = rot6d_to_axis_angle(root_pose)
-        body_pose = rot6d_to_axis_angle(body_pose.reshape(-1, 6)).reshape(body_pose.shape[0], -1)  # (N, J_R*3)
+        body_pose = body_pose.reshape(-1, 6)
         cam_trans = self.get_camera_trans(cam_param)
 
         # 3. Hand and Face BBox Estimation
@@ -235,7 +233,7 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
         # hand regressor
         _, hand_joint_img = self.hand_position_net(hand_feat)  # (2N, J_P, 3)
         hand_pose = self.hand_regressor(hand_feat, hand_joint_img.detach())
-        hand_pose = rot6d_to_axis_angle(hand_pose.reshape(-1, 6)).reshape(hand_feat.shape[0], -1)  # (2N, J_R*3)
+        hand_pose = hand_pose.reshape(-1, 6)
         # restore flipped left hand joint coordinates
         batch_size = hand_joint_img.shape[0] // 2
         lhand_joint_img = hand_joint_img[:batch_size, :, :]
@@ -249,7 +247,6 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
 
         # hand regressor
         expr, jaw_pose = self.face_regressor(expr_token, jaw_pose_token)
-        jaw_pose = rot6d_to_axis_angle(jaw_pose)
 
         # final output
         joint_proj, joint_cam, joint_cam_wo_ra, mesh_cam = self.get_coord(root_pose, body_pose, lhand_pose, rhand_pose, jaw_pose, shape, expr, cam_trans)
@@ -309,22 +306,6 @@ def init_weights(m):
             nn.init.constant_(m.bias, 0)
     except AttributeError:
         pass
-
-def rot6d_to_axis_angle(x):
-    batch_size = x.shape[0]
-
-    x = x.view(-1, 3, 2)
-    a1 = x[:, :, 0]
-    a2 = x[:, :, 1]
-    b1 = F.normalize(a1)
-    b2 = F.normalize(a2 - torch.einsum('bi,bi->b', b1, a2).unsqueeze(-1) * b1)
-    b3 = torch.cross(b1, b2)
-    rot_mat = torch.stack((b1, b2, b3), dim=-1)  # 3x3 rotation matrix
-
-    rot_mat = torch.cat([rot_mat, torch.zeros((batch_size, 3, 1)).cuda().float()], 2)  # 3x4 rotation matrix
-    axis_angle = tgm.rotation_matrix_to_angle_axis(rot_mat).reshape(-1, 3)  # axis-angle
-    axis_angle[torch.isnan(axis_angle)] = 0.0
-    return axis_angle
 
 def restore_bbox(bbox_center, bbox_size, aspect_ratio, extension_ratio, input_body_shape, output_hm_shape):
     bbox = bbox_center.view(-1, 1, 2) + torch.cat((-bbox_size.view(-1, 1, 2) / 2., bbox_size.view(-1, 1, 2) / 2.),
