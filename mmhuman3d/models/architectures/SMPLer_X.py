@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from ..heads.smplerx_head import PositionNet, HandRotationNet, FaceRegressor, BoxNet, HandRoI, BodyRotationNet
 
 from mmhuman3d.models.utils.human_models import smpl_x
-
+from mmhuman3d.utils.transforms import rot6d_to_aa
 import math
 import mmcv
 import copy
@@ -216,7 +216,8 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
         # 2. Body Regressor
         body_joint_hm, body_joint_img = self.body_position_net(img_feat)
         root_pose, body_pose, shape, cam_param, = self.body_regressor(body_pose_token, shape_token, cam_token, body_joint_img.detach())
-        body_pose = body_pose.reshape(-1, 6)
+        root_pose = rot6d_to_aa(root_pose)
+        body_pose = rot6d_to_aa(body_pose.reshape(-1, 6))
         cam_trans = self.get_camera_trans(cam_param)
 
         # 3. Hand and Face BBox Estimation
@@ -233,7 +234,7 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
         # hand regressor
         _, hand_joint_img = self.hand_position_net(hand_feat)  # (2N, J_P, 3)
         hand_pose = self.hand_regressor(hand_feat, hand_joint_img.detach())
-        hand_pose = hand_pose.reshape(-1, 6)
+        hand_pose = rot6d_to_aa(hand_pose.reshape(-1, 6))
         # restore flipped left hand joint coordinates
         batch_size = hand_joint_img.shape[0] // 2
         lhand_joint_img = hand_joint_img[:batch_size, :, :]
@@ -247,6 +248,7 @@ class SMPLer_X(BaseArchitecture, metaclass=ABCMeta):
 
         # hand regressor
         expr, jaw_pose = self.face_regressor(expr_token, jaw_pose_token)
+        jaw_pose = rot6d_to_aa(jaw_pose)
 
         # final output
         joint_proj, joint_cam, joint_cam_wo_ra, mesh_cam = self.get_coord(root_pose, body_pose, lhand_pose, rhand_pose, jaw_pose, shape, expr, cam_trans)
