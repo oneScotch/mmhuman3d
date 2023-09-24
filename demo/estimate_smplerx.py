@@ -22,7 +22,6 @@ from mmhuman3d.utils.demo_utils import (
     process_mmdet_results,
 )
 from mmhuman3d.utils.ffmpeg_utils import array_to_images
-from mmhuman3d.utils.transforms import rotmat_to_aa
 
 try:
     from mmdet.apis import inference_detector, init_detector
@@ -71,8 +70,7 @@ def single_person_with_mmdet(args, frames_iter):
         left_hand_pose=[],
         right_hand_pose=[],
         jaw_pose=[],
-        expression=[],
-        transl=[])
+        expression=[])
     pred_cams, bboxes_xyxy = [], []
 
     frame_id_list, result_list = get_detection_result(args, frames_iter)
@@ -102,16 +100,15 @@ def single_person_with_mmdet(args, frames_iter):
             result,
             bbox_thr=args.bbox_thr,
             format='xyxy')
-        smplx_results['global_orient'].append(mesh_results[0]['smplx_root_pose'].reshape(-1,3).numpy())
-        smplx_results['body_pose'].append(mesh_results[0]['smplx_body_pose'].reshape(-1,3).numpy())
-        smplx_results['betas'].append(mesh_results[0]['smplx_shape'].reshape(-1,10).numpy())
-        smplx_results['left_hand_pose'].append(mesh_results[0]['smplx_lhand_pose'].reshape(-1,3).numpy())
-        smplx_results['right_hand_pose'].append(mesh_results[0]['smplx_rhand_pose'].reshape(-1,3).numpy())
-        smplx_results['jaw_pose'].append(mesh_results[0]['smplx_jaw_pose'].reshape(-1,3).numpy())
-        smplx_results['expression'].append(mesh_results[0]['smplx_expr'].reshape(-1,10).numpy())
-        smplx_results['transl'].append( mesh_results[0]['cam_trans'].reshape(-1,3).numpy())
+        smplx_results['global_orient'].append(mesh_results[0]['smplx_root_pose'])
+        smplx_results['body_pose'].append(mesh_results[0]['smplx_body_pose'])
+        smplx_results['betas'].append(mesh_results[0]['smplx_shape'])
+        smplx_results['left_hand_pose'].append(mesh_results[0]['smplx_lhand_pose'])
+        smplx_results['right_hand_pose'].append(mesh_results[0]['smplx_rhand_pose'])
+        smplx_results['jaw_pose'].append(mesh_results[0]['smplx_jaw_pose'])
+        smplx_results['expression'].append(mesh_results[0]['smplx_expr'])
 
-        pred_cams.append(mesh_results[0]['camera'])
+        pred_cams.append(mesh_results[0]['cam_trans'])
         bboxes_xyxy.append(mesh_results[0]['bbox'])
 
     for key in smplx_results:
@@ -122,12 +119,7 @@ def single_person_with_mmdet(args, frames_iter):
     del mesh_model
     torch.cuda.empty_cache()
 
-    if smplx_results['body_pose'].shape[1:] == (21, 3, 3):
-        for key in smplx_results:
-            if key not in ['betas', 'expression']:
-                smplx_results[key] = rotmat_to_aa(smplx_results[key])
-    else:
-        raise Exception('Wrong shape of `body_pose`')
+
     fullpose = np.concatenate(
         (
             smplx_results['global_orient'],
