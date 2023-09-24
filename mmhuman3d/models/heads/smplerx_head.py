@@ -130,7 +130,7 @@ class BoxSizeNet(nn.Module):
         return lhand_size, rhand_size, face_size
 
 class HandRoI(nn.Module):
-    def __init__(self, feat_dim, upscale, input_body_shape, output_hm_shape):
+    def __init__(self, feat_dim, upscale, input_body_shape, output_hm_shape, output_hand_hm_shape):
         super(HandRoI, self).__init__()
         self.upscale = upscale
         if upscale==1:
@@ -147,6 +147,7 @@ class HandRoI(nn.Module):
             self.conv = make_conv_layers([feat_dim//8, feat_dim], kernel=1, stride=1, padding=0, bnrelu_final=False)
         self.input_body_shape = input_body_shape
         self.output_hm_shape = output_hm_shape
+        self.output_hand_hm_shape = output_hand_hm_shape
     def forward(self, img_feat, lhand_bbox, rhand_bbox):
         lhand_bbox = torch.cat((torch.arange(lhand_bbox.shape[0]).float().cuda()[:, None], lhand_bbox),
                                1)  # batch_idx, xmin, ymin, xmax, ymax
